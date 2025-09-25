@@ -1,0 +1,379 @@
+---
+title: "miRs 5 clusters, multivar"
+author: "Niamh Errington"
+date: "`r format(Sys.time(), '%d %B %Y')`" 
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+---
+
+Create multivariable glm model for zscored data (keeping < 5 sd from mean). Clusters trained using training + interim. Models for each cluster trained on training set alone, using interim as test.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(kableExtra)
+```
+
+```{r, message=FALSE}
+#load libraries
+library(glmnet)
+library(caret)
+library(tidyverse)
+library(dunn.test)
+library(survival)
+library(survminer)
+library(readxl)
+library(viridis)
+library(pROC)
+library(tidytext) #reorder_within
+```
+
+```{r, message=FALSE, warning=FALSE, cache=TRUE}
+# Load previously cached chunks
+#qwraps2::lazyload_cache_dir(path = "Z5_k5_PH12345_multivarmodels_cache/html")
+
+#Read in data & create data set for each cluster
+cluster_memberships <- read_csv( "PH12345_25memberships_Z5_allmiR.csv")
+
+#load Zscored data
+zscored <- read_csv("../../Data/z_TI_noout_5_PH12345.csv") 
+zscored <- left_join(zscored, cluster_memberships, by = "SampleID")  
+
+#load validation data  (doesn't have cluster assignments)
+Validation <- read_csv("../../Data/z_V_noout_5_PH12345.csv") 
+
+# load miRs in cipher
+miRNAs_detected_in_Cipher_Serum <- read_excel("../../Data/miRNAs detected in Cipher Serum.xlsx")
+
+miR_detect <- c("SampleID", "k5.memberships", "PARTITION", miRNAs_detected_in_Cipher_Serum$Serum.miR)
+
+zscored <- zscored[, (colnames(zscored) %in% miR_detect)]
+
+
+zscored <- zscored %>% filter(!is.na(k5.memberships) ) 
+
+#Recode k5 memberships to letters
+zscored$k5.memberships <- dplyr::recode(zscored$k5.memberships, `1` = "A", `2` = "B", `3` = "C", `4` = "D", `5`="E") %>% as.factor(.) %>% droplevels(.)
+
+#Partition into training & interim based on original partitions
+TrainingmiRs<- zscored %>% select(SampleID, PARTITION, k5.memberships, starts_with("hsa")) 
+Training <- TrainingmiRs %>% filter(PARTITION == "TRAINING") %>% select(-PARTITION)
+Interim <- TrainingmiRs %>% filter(PARTITION == "INTERIM") %>% select(-PARTITION)
+
+```
+
+```{r}
+# Split the data into features (X) and target (y)
+X <- Training %>% select(-SampleID, -k5.memberships)
+y <- Training$k5.memberships
+
+# Define train control for 10-fold cross-validation
+train_control <- trainControl(
+  method = "cv",
+  number = 10, # 10-fold CV
+  classProbs = TRUE, # Enable class probabilities 
+  summaryFunction = multiClassSummary # Use a multi-class evaluation metric
+)
+
+# Train a multinomial logistic regression model using glmnet 
+set.seed(123) # For reproducibility
+multi_model <- train(
+  x = X,
+  y = y,
+  method = "glmnet", # GLM with elastic net regularization
+  family = "multinomial", # Multi-class classification
+  trControl = train_control,
+  tuneGrid = expand.grid(
+    alpha = 1, #LASSO to reduce number of coefficients
+    lambda = exp(seq(log(0.1), log(10), length = 100)) # higher lambda = stronger penalty & fewer coefficients
+  )
+)
+
+# Check performance
+#confusionMatrix(predict(multi_model, X), y)
+#confusionMatrix(predict(multi_model, Interim), Interim$k5.memberships)
+
+
+# Extract non-zero features
+final_model <- multi_model$finalModel
+best_lambda <- multi_model$bestTune$lambda
+
+# Get coefficients for the best lambda
+coef_matrix <- coef(final_model, s = best_lambda)
+
+# Identify non-zero features
+non_zero_features <- lapply(coef_matrix, function(class_matrix) {
+  df <- as.data.frame(as.matrix(class_matrix))
+  colnames(df) <- "Coefficient" 
+  # Filter rows where the coefficient is non-zero 
+  non_zero <- df %>%
+    filter(Coefficient != 0) %>%
+    rownames()
+  
+  return(non_zero)
+})
+
+X_reduced <- X[, colnames(X) %in% c(non_zero_features$A, non_zero_features$B, non_zero_features$C, non_zero_features$D, non_zero_features$E)]
+
+int_reduced <- Interim[, colnames(Interim) %in% c(non_zero_features$A, non_zero_features$B, non_zero_features$C, non_zero_features$D, non_zero_features$E)]
+
+# Retune model using only selected variables
+set.seed(123) # For reproducibility
+multi_model_reduced <- train(
+  x = X_reduced,
+  y = y,
+  method = "glmnet", # GLM with elastic net regularization
+  family = "multinomial", # Multi-class classification
+  trControl = train_control,
+  tuneGrid = expand.grid(
+    alpha = 1, #LASSO to reduce number of coefficients
+    lambda = exp(seq(log(0.01), log(10), length = 100)) # higher lambda = stronger penalty & fewer coefficients
+  )
+)
+
+# Extract non-zero features
+final_model <- multi_model_reduced$finalModel
+best_lambda <- multi_model_reduced$bestTune$lambda
+
+# Get coefficients for the best lambda
+coef_matrix <- coef(final_model, s = best_lambda)
+
+# Identify non-zero features
+non_zero_features <- lapply(coef_matrix, function(class_matrix) {
+  df <- as.data.frame(as.matrix(class_matrix))
+  colnames(df) <- "Coefficient" 
+  # Filter rows where the coefficient is non-zero 
+  non_zero <- df %>%
+    filter(Coefficient != 0) %>%
+    rownames()
+  
+  return(non_zero)
+})
+
+#saveRDS(multi_model_reduced, "Omada/FinalModels/Multivar_model.rds")
+#multi_model_reduced <- readRDS("Omada/FinalModels/Multivar_model.rds")
+```
+
+## Training set performance
+
+```{r}
+# Check performance
+confusionMatrix(predict(multi_model_reduced, X_reduced), y)
+
+# Get predicted probabilities on training data
+predicted_probs_t <- predict(multi_model_reduced, X_reduced, type = "prob") # Probabilities for each class
+
+# Compute multiclass AUC
+auc_result_t <- multiclass.roc(y, predicted_probs_t)
+auc_result_t
+
+# Per-class AUCs
+per_class_auc_t <- auc(auc_result_t)
+per_class_auc_t
+```
+
+## Interim set performance
+
+```{r}
+confusionMatrix(predict(multi_model_reduced, int_reduced), Interim$k5.memberships)
+
+# Get predicted probabilities on test data
+predicted_probs_i <- predict(multi_model_reduced, int_reduced, type = "prob") # Probabilities for each class
+
+# Compute multiclass AUC
+auc_result_i <- multiclass.roc(Interim$k5.memberships, predicted_probs_i)
+auc_result_i
+
+# Per-class AUCs
+per_class_auc_i <- auc(auc_result_i)
+per_class_auc_i
+
+
+# Compute ROC and AUC for each class
+roc_list <- lapply(levels(Interim$k5.memberships), function(class) {
+  roc(Interim$k5.memberships == class, predicted_probs_i[, class], quiet = TRUE)  # One-vs-all
+})
+
+# Extract AUC for each class
+auc_values <- sapply(roc_list, function(roc_obj) auc(roc_obj))
+
+# Prepare data for plotting
+roc_data <- do.call(rbind, lapply(1:length(roc_list), function(i) {
+  data.frame(
+    TPR = roc_list[[i]]$sensitivities,   # True Positive Rate
+    FPR = 1 - roc_list[[i]]$specificities, # False Positive Rate
+    Class = levels(Interim$k5.memberships)[i]
+  )
+}))
+
+# Plot the ROC curves for all classes
+ggplot(roc_data, aes(x = FPR, y = TPR, color = Class)) +
+  geom_line(size = 1.2) +
+  theme_minimal() +
+  labs(
+    title = "ROC Curves for Multinomial Logistic Regression (Interim)",
+    x = "False Positive Rate",
+    y = "True Positive Rate",
+    color = "Class"
+  ) +
+  annotate("text", x = 0.2, y = 0.2, 
+           label = paste("AUCs:", paste(levels(Interim$k5.memberships), round(auc_values, 3), sep = " = ", collapse = ", ")),
+           hjust = 0, size = 4)
+```
+
+
+```{r}
+# Plot model performance 
+ggplot(multi_model_reduced)
+
+# Extract coefficients for the best lambda
+coef_matrix <- coef(final_model, s = best_lambda)
+
+# Combine coefficients into a data frame
+coef_df <- do.call(rbind, lapply(seq_along(coef_matrix), function(class) {
+  data <- as.data.frame(as.matrix(coef_matrix[[class]]))
+  colnames(data) <- "Coefficient"
+  data$Feature <- rownames(data)
+  data$Class <- names(coef_matrix)[class]
+  return(data)
+}))
+
+# Filter non-zero coefficients
+coef_df <- coef_df[coef_df$Coefficient != 0, ]
+```
+
+## Coefficients
+
+Length of coefficients for each cluster.
+
+NB: You get 5 sets of coefficients in a multinomial glmnet model for 5 classes because the model constructs a unique linear predictor for each class. These predictors collectively determine the probabilities of each class for a given input using the softmax function.
+
+```{r}
+paste("cluster A miRNA:" ,length(unique(coef_df$Feature[coef_df$Class == "A"])) )
+paste("cluster B miRNA:" ,length(unique(coef_df$Feature[coef_df$Class == "B"])) )
+paste("cluster C miRNA:" ,length(unique(coef_df$Feature[coef_df$Class == "B"])) )
+paste("cluster D miRNA:" ,length(unique(coef_df$Feature[coef_df$Class == "B"])) )
+paste("cluster E miRNA:" ,length(unique(coef_df$Feature[coef_df$Class == "B"])) )
+
+```
+
+```{r}
+#Fix miR names for plotting
+coef_df$Feature <- gsub("\\.", "-", coef_df$Feature )
+coef_df$Feature  <- gsub("\\(", "", coef_df$Feature )
+coef_df$Feature  <- gsub("\\)", "", coef_df$Feature )
+
+coef_df %>%
+  mutate(Feature = reorder_within(Feature, abs(Coefficient), Class)) %>%
+  ggplot(aes(x = Feature, y = Coefficient, fill = Class)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Non-Zero Coefficients by Feature and Class",
+       x = "Feature",
+       y = "Coefficient",
+       fill = "Class") +
+  facet_wrap(~Class, scales = "free", ncol = 1) +
+  scale_x_reordered() + scale_fill_manual(values = c("#88CCEE", "#CC6677", "#DDCC77", "#332288", "#AA4499"))
+
+coef_df %>%
+  filter(Class %in% c("A", "B", "C")) %>%
+  mutate(Feature = reorder_within(Feature, abs(Coefficient), Class)) %>%
+  ggplot(aes(x = Feature, y = Coefficient, fill = Class)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  coord_flip() +
+  labs(x = "Feature",
+       y = "Coefficient",
+       fill = "Class") +
+  facet_wrap(~Class, scales = "free_y", ncol = 1) +
+  scale_x_reordered() + scale_fill_manual(values = c("#88CCEE", "#CC6677", "#DDCC77"))
+
+coef_df %>%
+  filter(Class %in% c("C", "D", "E")) %>%
+  mutate(Feature = reorder_within(Feature, abs(Coefficient), Class)) %>%
+  ggplot(aes(x = Feature, y = Coefficient, fill = Class)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  coord_flip() +
+  labs( x = "Feature",
+       y = "Coefficient",
+       fill = "Class") +
+  facet_wrap(~Class, scales = "free_y", ncol = 1) +
+  scale_x_reordered() + scale_fill_manual(values = c("#DDCC77", "#332288", "#AA4499"))
+
+
+```
+
+## AUC
+
+```{r}
+
+
+```
+
+## Interim -A
+
+```{r}
+predictions_i_noA <- Interim %>% filter(k5.memberships != "A" )%>% select(-SampleID, -k5.memberships) %>% predict(multi_model, .)
+confusionMatrix(predictions_i_noA, Interim$k5.memberships[Interim$k5.memberships != "A"] )
+
+```
+
+## Interim -B
+
+```{r}
+predictions_i_noB <- Interim %>% filter(k5.memberships != "B" )%>% select(-SampleID, -k5.memberships) %>% predict(multi_model, .)
+confusionMatrix(predictions_i_noB, Interim$k5.memberships[Interim$k5.memberships != "B"] )
+
+```
+
+## Interim -C
+
+```{r}
+predictions_i_noC <- Interim %>% filter(k5.memberships != "C" )%>% select(-SampleID, -k5.memberships) %>% predict(multi_model, .)
+confusionMatrix(predictions_i_noC, Interim$k5.memberships[Interim$k5.memberships != "C"] )
+
+```
+
+## Interim -D
+
+```{r}
+predictions_i_noD <- Interim %>% filter(k5.memberships != "D" )%>% select(-SampleID, -k5.memberships) %>% predict(multi_model, .)
+confusionMatrix(predictions_i_noD, Interim$k5.memberships[Interim$k5.memberships != "D"] )
+
+```
+
+## Interim -E
+
+```{r}
+predictions_i_noE <- Interim %>% filter(k5.memberships != "E" )%>% select(-SampleID, -k5.memberships) %>% predict(multi_model, .)
+confusionMatrix(predictions_i_noE, Interim$k5.memberships[Interim$k5.memberships != "E"] )
+
+```
+
+## Validation
+
+```{r}
+V <- Validation %>% select(starts_with("hsa")) 
+# Re-align columns to match training data
+V <- V[, colnames(X), drop = FALSE]
+predictions_v <- predict(multi_model, V)
+
+#add predictions to pheno data for Validation
+Validation$clusterprediction <- predictions_v
+
+#write csv
+write_csv(Validation, "Validation_with_k5prediction.csv")
+
+```
+
+```{r}
+as.data.frame(table(Validation$dana1, Validation$clusterprediction))  %>% group_by(Var2, Var1) %>% ggplot(aes(x=Var2, y=Freq, fill=Var1)) + geom_bar(stat="identity")  + scale_fill_manual(values = c("darkseagreen1","seagreen4", "grey", "lightblue", "midnightblue")) + ggtitle("WSPH PH Group, 5 clusters") + labs(x = "Cluster", y = "Number of patients", size = 14) +  guides(fill=guide_legend(title=NULL)) + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(fill=guide_legend(title=NULL))
+
+```
+
+

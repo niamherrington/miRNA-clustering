@@ -1,0 +1,96 @@
+---
+title: "Zscore Processing"
+author: "Niamh Errington"
+date: "`r format(Sys.time(), '%d %B %Y')`" 
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+---
+
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = FALSE)
+library(kableExtra)
+```
+
+```{r, warning = F, message = F}
+#load libraries
+library(readr)
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(janitor)
+library(kableExtra)
+```
+
+```{r, warning=FALSE, message=FALSE}
+#Read in data
+data_uk_serum_corrected <- read_excel("Data/data_uk_serum_fullpheno_corrected.xlsx") %>% filter(dana1 != "HC")
+data_uk_serum_fullpheno <- read_excel("Data/data_uk_serum_fullpheno.xlsx")%>% filter(dana1 != "HC")
+
+#Z score corrected data
+Zscored <- data_uk_serum_corrected %>% mutate_at(vars(contains("hsa")),  ~ (.-mean(.)) / sd(.))
+write_csv(Zscored, "Data/zscored.csv")
+
+ZscoredRaw <- data_uk_serum_fullpheno %>% mutate_at(vars(contains("hsa")),  ~ (.-mean(.)) / sd(.))
+write_csv(ZscoredRaw, "Data/zscoredRaw.csv")
+
+phenovars <- Zscored %>% select(!starts_with("hsa")) %>% colnames(.)
+
+#load function to use spectral clustering to create heatmap
+source("SpectralHeatmap.R")
+```
+
+```{r}
+#Get list of miRNAs common across all datasets:
+CiphermiRs <- read.delim("Data/Cipher_miRNAs.txt", header = FALSE, sep = "\t", dec = ",") 
+CiphermiRs <- CiphermiRs$V1
+retroMiRs <- Zscored %>% select(starts_with("hsa")) %>% colnames(.)
+
+miRtoUse <- CiphermiRs[CiphermiRs %in% retroMiRs]
+paste("Number of miRNAs in common between Cipher & UK retrospective data: ", length(miRtoUse))
+
+Zscoredshort <- Zscored %>% select(all_of(phenovars), all_of(miRtoUse))
+write_csv(Zscoredshort, "Data/zscoredshort.csv")
+
+```
+
+
+```{r}
+library(pheatmap)
+# Define colors for heatmap
+my_palette <- colorRampPalette(c("blue", "white", "red"))(100)
+
+create_spectral_heatmap(dplyr::select(Zscored, starts_with("hsa")), "Spectral: miRNA Expression Heatmap, Zscore data, k = 5", 5, 5 )
+
+# Plot heatmap
+pheatmap(dplyr::select(Zscored, starts_with("hsa")), color = my_palette,
+         cluster_rows = TRUE, cluster_cols = TRUE,
+         main = "miRNA Expression Heatmap, Zscore data")
+```
+
+
+```{r}
+Z_TI_PH12345 <- Zscored %>% filter(PARTITION!= "VALIDATION") %>% filter(dana1 %in% c("PH1", "PH2", "PH3", "PH4", "PH5"))
+Z_TI_PH12345 <- Z_TI_PH12345 %>% mutate_at(vars(contains("hsa")),  ~ (.-mean(.)) / sd(.)) %>% filter(!if_any(starts_with("hsa"), ~ . > 5 | . < -5))
+write_csv(Z_TI_PH12345 , "Data/z_TI_noout_5_PH12345.csv")
+
+Z_V_PH12345 <- Zscored %>% filter(PARTITION== "VALIDATION") %>% filter(dana1 %in% c("PH1", "PH2", "PH3", "PH4", "PH5"))
+Z_V_PH12345 <- Z_V_PH12345 %>% mutate_at(vars(contains("hsa")),  ~ (.-mean(.)) / sd(.)) %>% filter(!if_any(starts_with("hsa"), ~ . > 5 | . < -5))
+write_csv(Z_V_PH12345 , "Data/z_V_noout_5_PH12345.csv")
+
+```
+
+```{r}
+# Plot heatmap
+pheatmap(dplyr::select(Z_TI_PH12345, starts_with("hsa")), color = my_palette,
+         cluster_rows = TRUE, cluster_cols = TRUE,
+         main = "miRNA Expression Heatmap, Zscore data <5 (TRAINING & INTERIM)")
+
+pheatmap(dplyr::select(Z_V_PH12345, starts_with("hsa")), color = my_palette,
+         cluster_rows = TRUE, cluster_cols = TRUE,
+         main = "miRNA Expression Heatmap, Zscore data <5 (VALIDATION)")
+```

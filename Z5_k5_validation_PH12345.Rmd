@@ -1,0 +1,585 @@
+---
+title: "Omada, PH12345, K5, Validation data"
+author: "Niamh Errington"
+date: "`r format(Sys.time(), '%d %B %Y')`" 
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+#load libraries
+library(tidyverse)
+library(janitor)
+library(omada)
+library(readr)
+library(qwraps2)
+library(kableExtra)
+library(chisq.posthoc.test)
+library(reshape2)
+library(ggpattern)
+library(dunn.test)
+library(tidyverse)
+
+#setwd("/Users/nerringt/Library/CloudStorage/OneDrive-ImperialCollegeLondon/ZScoreRetrospectiveMiRNA")
+pheno <- read_csv("Validation_with_k5prediction.csv") %>% dplyr::rename(cluster5 = "clusterprediction")
+
+# Create column with PH1-5 recoded to WHPH names
+pheno$danalong <- recode_factor(pheno$dana1, "PH1" = "PAH", "PH2" = "PH-LHD", "PH3" = "PH-lung", "PH4" = "PH-Obs", "PH5" = "PH-Misc")
+
+# Remove any patients without a cluster allocation
+Clusterpheno <- pheno %>% filter(!is.na(cluster5))
+
+# Set colours for clusters
+clusterfills <- c("#88CCEE", "#CC6677", "#DDCC77", "#332288", "#AA4499")
+
+```
+
+# Clinical variables
+
+```{r}
+addmargins(table(Clusterpheno$cluster5, Clusterpheno$dana1.1)) %>% kable(., caption = "PH group breakdown") %>% kable_styling(full_width = TRUE)
+
+kable(prop.table(table(Clusterpheno$dana1.1, Clusterpheno$cluster5),2)*100, caption = "% composition dana 1 per cluster") %>% kable_styling(full_width = TRUE)
+
+fisher.test(table(Clusterpheno$dana1.1, Clusterpheno$cluster5), conf.level = 0.95, simulate.p.value=TRUE)
+
+as.data.frame(table(Clusterpheno$danalong, Clusterpheno$cluster5))  %>% group_by(Var2, Var1) %>% ggplot(aes(x=Var2, y=Freq, fill=Var1)) + geom_bar(stat="identity")  + scale_fill_manual(values = c("darkseagreen1","seagreen4", "grey", "lightblue", "midnightblue")) + ggtitle("WSPH PH Group, 5 clusters") + labs(x = "Cluster", y = "Number of patients", size = 14) +  guides(fill=guide_legend(title=NULL)) + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(fill=guide_legend(title=NULL))
+
+```
+
+## Sex
+
+```{r}
+kable(addmargins(table(Clusterpheno$sex, Clusterpheno$cluster5))) %>% kable_styling(full_width = TRUE)
+sex10<- chisq.test(table(Clusterpheno$sex, Clusterpheno$cluster5))
+sex10
+
+as.data.frame(table(Clusterpheno$cluster5, Clusterpheno$sex)) %>% ggplot(aes(x = Var1, y = Freq, fill = Var1, pattern = Var2)) + scale_fill_manual(values = clusterfills)  + geom_bar_pattern(stat = "identity", color = "black", 
+  pattern_fill = "black",
+                   pattern_angle = 45,
+                   pattern_density = 0.1,
+                   pattern_spacing = 0.025,) + scale_pattern_manual(values = c(M = "stripe", F = "none")) +
+  ggtitle("Sex") + labs(x = "Cluster", y = "") + guides(fill=guide_legend(title=NULL)) + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+```
+
+## FC
+
+```{r}
+kable(addmargins(table(Clusterpheno$fclass,  Clusterpheno$cluster5))) %>% kable_styling(full_width = TRUE)
+kable(prop.table(table(Clusterpheno$fclass, Clusterpheno$cluster5),2)*100, caption = "% composition per cluster") %>% kable_styling(full_width = TRUE)
+fc10<- fisher.test(table(Clusterpheno$fclass, Clusterpheno$cluster5), conf.level = 0.95, simulate.p.value=TRUE)
+fc10
+
+kable(chisq.posthoc.test(table(Clusterpheno$fclass, Clusterpheno$cluster5), method = "BH"))  %>% kable_styling(full_width = TRUE)
+
+as.data.frame(table(Clusterpheno$cluster5, Clusterpheno$fclass)) %>% mutate(Var2 = recode(Var2, `1` = "I", `2` = "II", `3` = "III", `4` = "IV")) %>% ggplot(aes(x = Var1, y = Freq, fill = Var2)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("deeppink","yellow", "midnightblue", "cornflowerblue")) + ggtitle("Functional Class") + labs(x = "Cluster", y = "n") + guides(fill=guide_legend(title=NULL)) + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), text = element_text(size = 14))
+
+
+```
+
+## REVEAL group
+
+```{r, eval = F}
+kable(addmargins(table(Clusterpheno$REVEALgroup,  Clusterpheno$cluster5))) %>% kable_styling(full_width = TRUE)
+kable(prop.table(table(Clusterpheno$REVEALgroup, Clusterpheno$cluster5),2)*100, caption = "% composition per cluster") %>% kable_styling(full_width = TRUE)
+
+Reveal10<- fisher.test(table(Clusterpheno$REVEALgroup, Clusterpheno$cluster5), conf.level = 0.95, simulate.p.value=TRUE)
+Reveal10
+
+kable(chisq.posthoc.test(table(Clusterpheno$REVEALgroup, Clusterpheno$cluster5), method = "BH"))  %>% kable_styling(full_width = TRUE)
+
+as.data.frame(table(Clusterpheno$cluster5, Clusterpheno$REVEALgroup)) %>% ggplot(aes(x = Var1, y = Freq, fill = Var2)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("deeppink", "midnightblue", "cornflowerblue")) + ggtitle("REVEAL score risk group") + labs(x = "Cluster", y = "N") + guides(fill=guide_legend(title=NULL)) + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), text = element_text(size = 14))
+```
+
+## Site
+
+Fisher test (simulate p values) p val < 0.05
+
+```{r}
+kable(addmargins(table(Clusterpheno$site,  Clusterpheno$cluster5))) %>% kable_styling(full_width = TRUE)
+site10<- fisher.test(table(Clusterpheno$site, Clusterpheno$cluster5), conf.level = 0.95, simulate.p.value=TRUE)
+site10
+#Posthoc Chisq
+kable(chisq.posthoc.test(table(Clusterpheno$site, Clusterpheno$cluster5), method = "BH"))  %>% kable_styling(full_width = TRUE)
+
+as.data.frame(table(Clusterpheno$cluster5, Clusterpheno$site)) %>% ggplot(aes(x = Var1, y = Freq, fill = Var2)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("deeppink","cornflowerblue", "midnightblue")) + ggtitle("Site") + labs(x = "Cluster", y = "") + guides(fill=guide_legend(title=NULL)) + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), text = element_text(size = 14))
+
+```
+
+## BMI
+max BMI 122 - error? Filtered to <80
+
+Not normally distributed. Large variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, bmi) %>%filter(!is.na(bmi)) %>% filter(bmi < 80) %>% ggplot(aes(x= cluster5, y =bmi)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "BMI") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+
+Clusterpheno %>% filter(!is.na(bmi)) %>% filter(bmi < 80) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(bmi)$p.value, Mean = mean(bmi), Variance = var(bmi), LogMean = mean(log(bmi)), LogVariance = var(log(bmi)), Median = median(bmi), IQR = IQR(bmi)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+bmi10<- Clusterpheno %>% filter(!is.na(bmi)) %>% filter(bmi < 80) %>% kruskal.test(log(bmi) ~ cluster5)
+bmi10
+
+dunn.test(Clusterpheno$bmi, Clusterpheno$cluster5, method = "BH")
+```
+
+## Age
+
+Not normally distributed. Large variances ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, age) %>% filter(!is.na(age)) %>% ggplot(aes(x= cluster5, y =age)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "Age") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+Clusterpheno %>%filter(!is.na(age)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(age)$p.value, Mean =mean(age), Variance = var(age), LogMean = mean(log(age)), LogVariance = var(log(age)), Median = median(age), IQR = IQR(age)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+age10<- kruskal.test(log(age) ~ cluster5, data = Clusterpheno)
+age10
+
+dunn.test(Clusterpheno$age, Clusterpheno$cluster5, method = "BH")
+```
+## NTproBNP
+
+Not all normally distributed.
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno$origntprobnp <- 2^Clusterpheno$ntprobnp
+kable(cbind(table(is.na(Clusterpheno$ntprobnp)), prop.table(table(is.na(Clusterpheno$ntprobnp)))*100), col.names = c("Missing Values", "%")) %>% kable_styling(full_width = TRUE)
+Clusterpheno %>% select(cluster5, ntprobnp) %>% ggplot(aes(x= cluster5, y = ntprobnp)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "log2(NT-proBNP)") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+group_by(Clusterpheno, cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(ntprobnp)$p.value, Variance = var(ntprobnp), Mean = mean(ntprobnp), Median = median(ntprobnp), IQR = IQR(ntprobnp)) %>% kable(., caption = "log2 values") %>% kable_styling(full_width = TRUE)
+
+group_by(Clusterpheno, cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(origntprobnp)$p.value, Variance = var(origntprobnp), Mean = mean(origntprobnp), Median = median(origntprobnp), IQR = IQR(origntprobnp)) %>% kable(., caption = "Original values") %>% kable_styling(full_width = TRUE)
+
+ntprobnp10<- kruskal.test(ntprobnp ~ cluster5, data = Clusterpheno)
+ntprobnp10
+dunn.test(Clusterpheno$ntprobnp, Clusterpheno$cluster5, method = "BH")
+```
+
+
+## Uric Acid
+
+Not all normally distributed.
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, ua) %>% ggplot(aes(x= cluster5, y = ua)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "Uric Acid") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+group_by(Clusterpheno, cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(ua)$p.value, Variance = var(ua), Mean = mean(ua), Median = median(ua), IQR = IQR(ua)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+ua10<- kruskal.test(ua ~ cluster5, data = Clusterpheno)
+ua10
+dunn.test(Clusterpheno$ua, Clusterpheno$cluster5, method = "BH")
+```
+
+## FVCP
+
+Normally distributed. Large variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, fvcp) %>% ggplot(aes(x= cluster5, y = fvcp)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "FVCP") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+Clusterpheno %>% filter(!is.na(fvcp)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(fvcp)$p.value, Variance = var(fvcp), Mean = mean(fvcp), SD = sd(fvcp), LogMean = mean(log(fvcp)), LogVariance = var(log(fvcp))) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+fvcp10<- aov(log(fvcp) ~ cluster5, data = Clusterpheno)
+summary(fvcp10)
+```
+
+## Treatment 
+
+```{r, warning = FALSE, message = FALSE}
+kable(addmargins(table(Clusterpheno$treated, Clusterpheno$cluster5))) %>% kable_styling(full_width = TRUE)
+kable(prop.table(table(Clusterpheno$treated, Clusterpheno$cluster5),2)*100) %>% kable_styling(full_width = TRUE)
+treatment10<- chisq.test(table(Clusterpheno$treated, Clusterpheno$cluster5))
+treatment10
+as.data.frame(table(Clusterpheno$cluster5, Clusterpheno$treated)) %>% ggplot(aes(x = Var1, y = Freq, fill = Var2)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("cornflowerblue","midnightblue")) + ggtitle("Treated") + labs(x = "Cluster", y = "") + guides(fill=guide_legend(title=NULL)) + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+#for posthoc Chisq
+kable(chisq.posthoc.test(table(Clusterpheno$treated, Clusterpheno$cluster5), method = "BH"))  %>% kable_styling(full_width = TRUE)
+```
+
+
+## 6MWD
+
+Not normally distributed, large variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, smwd) %>% ggplot(aes(x= cluster5, y =smwd)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "6MWD") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+Clusterpheno %>% filter(!is.na(smwd)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(smwd)$p.value, Variance = var(smwd), Mean = mean(smwd), logVariance = var(log(smwd)), logmean = mean(log(smwd)), Median = median(smwd), IQR = IQR(smwd)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+smwd10<- kruskal.test(log(smwd) ~ cluster5, data = Clusterpheno)
+smwd10
+dunn.test(log(Clusterpheno$smwd), Clusterpheno$cluster5, method = "BH")
+
+```
+
+
+## ISWT (eval F)
+
+Sheffield only
+
+Not normally distributed, log transformed
+
+```{r, warning = FALSE, message = FALSE, eval = F}
+Clusterpheno %>% select(cluster5, iswt) %>% ggplot(aes(x= cluster5, y =iswt)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "6MWD") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+Clusterpheno %>% filter(!is.na(iswt)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(iswt)$p.value, Variance = var(iswt), Mean = mean(iswt), logVariance = var(log(iswt)), logmean = mean(log(iswt)), Median = median(iswt), IQR = IQR(iswt)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+iswt6<- kruskal.test(log(iswt) ~ cluster5, data = Clusterpheno)
+iswt6
+dunn.test(log(Clusterpheno$iswt), Clusterpheno$cluster5, method = "BH")
+
+```
+
+
+## BPDIA
+
+Not all normally distributed, large variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, bpdia) %>% ggplot(aes(x= cluster5, y =bpdia)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "BPDIA") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+Clusterpheno %>% filter(!is.na(bpdia)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(bpdia)$p.value, Variance = var(bpdia), Mean = mean(bpdia), logVariance = var(log(bpdia)), logmean = mean(log(bpdia)), Median = median(bpdia), IQR = IQR(bpdia)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+bpdia10<- kruskal.test(log(bpdia) ~ cluster5, data = Clusterpheno)
+bpdia10
+dunn.test(log(Clusterpheno$bpdia), Clusterpheno$cluster5, method = "BH")
+```
+
+## BPSYS
+
+Not normally distributed, large variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, bpsys) %>% ggplot(aes(x= cluster5, y =bpsys)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "BPSYS") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+Clusterpheno %>% filter(!is.na(bpsys)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(bpsys)$p.value, Variance = var(bpsys), Mean = mean(bpsys), logVariance = var(log(bpsys)), logmean = mean(log(bpsys)), Median = median(bpsys), IQR = IQR(bpsys))  %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+bpsys10<- kruskal.test(log(bpsys) ~ cluster5, data = Clusterpheno)
+bpsys10
+dunn.test(log(Clusterpheno$bpsys), Clusterpheno$cluster5, method = "BH")
+```
+
+## PVR
+
+Not normally distributed, unequal variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, PVRdynes) %>% filter(!is.na(PVRdynes)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(PVRdynes)$p.value, Mean = mean(PVRdynes), logmean = mean(log(PVRdynes)), Variance = var(PVRdynes), logvar = var(log(PVRdynes)), min = min(PVRdynes), max =  max(PVRdynes), median = median(PVRdynes), IQR = IQR(PVRdynes)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, PVRdynes) %>% filter(!is.na(PVRdynes)) %>% ggplot(aes(x= cluster5, y =PVRdynes)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "PVR (Dynes)") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+pvr10<- kruskal.test(log(PVRdynes) ~ cluster5, data = Clusterpheno)
+pvr10
+dunn.test(log(Clusterpheno$PVRdynes), Clusterpheno$cluster5, method = "BH")
+```
+
+## mPAP
+
+Not normally distributed, unequal variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, mPAP) %>% filter(!is.na(mPAP)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(mPAP)$p.value, Mean = mean(mPAP), logmean = mean(log(mPAP)), Variance = var(mPAP), logvar = var(log(mPAP)), min = min(mPAP), max =  max(mPAP), median = median(mPAP), IQR = IQR(mPAP))%>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, mPAP) %>% filter(!is.na(mPAP)) %>% ggplot(aes(x= cluster5, y =mPAP)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "mPAP (mm Hg)") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+mpap10 <- kruskal.test(log(mPAP) ~ cluster5, data = Clusterpheno)
+mpap10
+dunn.test(log(Clusterpheno$mPAP), Clusterpheno$cluster5, method = "BH")
+```
+
+## sPAP
+
+Not normally distributed, unequal variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, sPAP) %>% filter(!is.na(sPAP)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(sPAP)$p.value, Mean = mean(sPAP), logmean = mean(log(sPAP)), Variance = var(sPAP), logvar = var(log(sPAP)), min = min(sPAP), max =  max(sPAP), median = median(sPAP), IQR = IQR(sPAP))%>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, sPAP) %>% filter(!is.na(sPAP)) %>% ggplot(aes(x= cluster5, y =sPAP)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "sPAP (mm Hg)") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+spap10<- kruskal.test(log(sPAP) ~ cluster5, data = Clusterpheno)
+spap10
+dunn.test(log(Clusterpheno$sPAP), Clusterpheno$cluster5, method = "BH")
+```
+
+## dPAP
+
+Not normally distributed, unequal variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, dPAP) %>% filter(!is.na(dPAP)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(dPAP)$p.value, Mean = mean(dPAP), logmean = mean(log(dPAP)), Variance = var(dPAP), logvar = var(log(dPAP)), min = min(dPAP), max =  max(dPAP), median = median(dPAP), IQR = IQR(dPAP))%>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, dPAP) %>% filter(!is.na(dPAP)) %>% ggplot(aes(x= cluster5, y =dPAP)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "dPAP (mm Hg)") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+dpap10<- kruskal.test(log(dPAP) ~ cluster5, data = Clusterpheno)
+dpap10
+dunn.test(log(Clusterpheno$dPAP), Clusterpheno$cluster5, method = "BH")
+```
+
+## mRAP
+
+Not normally distributed, log transformed.
+
+Outliers (1 outlier = 99 filtered to <50 - check sensible)
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, mRAP) %>% filter(!is.na(mRAP)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(mRAP)$p.value, Mean = mean(mRAP), logmean = mean(log(mRAP)), Variance = var(mRAP), logvar = var(log(mRAP)), min = min(mRAP), max =  max(mRAP), median = median(mRAP), IQR = IQR(mRAP))%>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, mRAP) %>% filter(!is.na(mRAP)) %>% filter(mRAP < 50 ) %>% ggplot(aes(x= cluster5, y =mRAP)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "mRAP (mm Hg)") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+mRAP10<- kruskal.test(log(mRAP) ~ cluster5, data = Clusterpheno)
+mRAP10
+dunn.test(log(Clusterpheno$mRAP), Clusterpheno$cluster5, method = "BH")
+```
+
+## SvO2
+
+Not normally distributed, unequal variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+
+Clusterpheno %>% select(cluster5, SvO2) %>% filter(!is.na(SvO2)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(SvO2)$p.value, Mean = mean(SvO2), logmean = mean(log(SvO2)), Variance = var(SvO2), logvar = var(log(SvO2)), min = min(SvO2), max =  max(SvO2), median = median(SvO2), IQR = IQR(SvO2))%>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, SvO2) %>% filter(!is.na(SvO2)) %>% ggplot(aes(x= cluster5, y =SvO2)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "SvO2") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+svo210<- kruskal.test(log(SvO2) ~ cluster5, data = Clusterpheno)
+svo210
+dunn.test(log(Clusterpheno$SvO2), Clusterpheno$cluster5, method = "BH")
+```
+
+## PAWP
+
+Not normally distributed, unequal variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+
+Clusterpheno %>% select(cluster5, PAWP) %>% filter(!is.na(PAWP)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(PAWP)$p.value, Mean = mean(PAWP), logmean = mean(log(PAWP)), Variance = var(PAWP), logvar = var(log(PAWP)), min = min(PAWP), max =  max(PAWP), median = median(PAWP), IQR = IQR(PAWP)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, PAWP) %>% filter(!is.na(PAWP)) %>% ggplot(aes(x= cluster5, y =PAWP)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "PAWP") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+pawp10<- kruskal.test(log(PAWP) ~ cluster5, data = Clusterpheno)
+pawp10
+dunn.test(log(Clusterpheno$PAWP), Clusterpheno$cluster5, method = "BH")
+```
+
+## Platelet Count
+
+Not normally distributed, unequal variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, platelet_count) %>% filter(!is.na(platelet_count)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(platelet_count)$p.value, Mean = mean(platelet_count), logmean = mean(log(platelet_count)), Variance = var(platelet_count), logvar = var(log(platelet_count)), min = min(platelet_count), max =  max(platelet_count), median = median(platelet_count), IQR = IQR(platelet_count)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, platelet_count) %>% filter(!is.na(platelet_count)) %>% ggplot(aes(x= cluster5, y =platelet_count)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "platelet_count") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+pc10<- kruskal.test(log(platelet_count) ~ cluster5, data = Clusterpheno)
+pc10
+dunn.test(log(Clusterpheno$platelet_count), Clusterpheno$cluster5, method = "BH")
+```
+
+## eGFR
+
+eGFR - gfr estimated in Imperial & Cambridge, Sheffield data gfr. Sheffield units ml/min/1.73m^2 
+
+Not normally distributed, unequal variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, eGFR) %>% filter(!is.na(eGFR)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(eGFR)$p.value, Mean = mean(eGFR), logmean = mean(log(eGFR)), Variance = var(eGFR), logvar = var(log(eGFR)), min = min(eGFR), max =  max(eGFR), median = median(eGFR), IQR = IQR(eGFR)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, eGFR) %>% filter(!is.na(eGFR)) %>% ggplot(aes(x= cluster5, y =eGFR)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "eGFR") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+egfr10<- kruskal.test(log(eGFR) ~ cluster5, data = Clusterpheno)
+egfr10
+dunn.test(log(Clusterpheno$eGFR), Clusterpheno$cluster5, method = "BH")
+```
+
+## Cardiac Output
+
+RHC fick
+
+Not normally distributed, roughly equal variance
+
+```{r, warning = FALSE, message = FALSE}
+
+Clusterpheno %>% select(cluster5, CardiacOutput) %>% filter(!is.na(CardiacOutput)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(CardiacOutput)$p.value, Mean = mean(CardiacOutput), Variance = var(CardiacOutput), min = min(CardiacOutput), max =  max(CardiacOutput), median = median(CardiacOutput), IQR = IQR(CardiacOutput)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, CardiacOutput) %>% filter(!is.na(CardiacOutput)) %>% ggplot(aes(x= cluster5, y =CardiacOutput)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "Cardiac Output") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+CardiacOutput10<- kruskal.test(CardiacOutput ~ cluster5, data = Clusterpheno)
+CardiacOutput10
+dunn.test(Clusterpheno$CardiacOutput, Clusterpheno$cluster5, method = "BH")
+```
+
+## Cardiac Index
+
+CardiacIndex RHC fick
+
+Not normally distributed, roughly equal variance
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, CardiacIndex) %>% filter(!is.na(CardiacIndex)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(CardiacIndex)$p.value, Mean = mean(CardiacIndex), Variance = var(CardiacIndex), min = min(CardiacIndex), max =  max(CardiacIndex), median = median(CardiacIndex), IQR = IQR(CardiacIndex)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, CardiacIndex) %>% filter(!is.na(CardiacIndex)) %>% ggplot(aes(x= cluster5, y =CardiacIndex)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "Cardiac Index") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+CardiacIndex10<- kruskal.test(CardiacIndex ~ cluster5, data = Clusterpheno)
+CardiacIndex10
+dunn.test(Clusterpheno$CardiacIndex, Clusterpheno$cluster5, method = "BH")
+```
+
+## Creatinine
+
+Not normally distributed, unequal variance ==> log transformed
+
+Outliers: ICB.PVD1102        733
+ 2 ICB.PVD736         507
+ 3 TB14.1205          420
+ 
+
+```{r, warning = FALSE, message = FALSE}
+Clusterpheno %>% select(cluster5, Creatinine) %>% filter(!is.na(Creatinine)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(Creatinine)$p.value, Mean = mean(Creatinine), logmean = mean(log(Creatinine)), Variance = var(Creatinine), logvar = var(log(Creatinine)), min = min(Creatinine), max =  max(Creatinine), median = median(Creatinine), IQR = IQR(Creatinine)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, Creatinine) %>% filter(!is.na(Creatinine)) %>% ggplot(aes(x= cluster5, y =Creatinine)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "Creatinine") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+Creat10<- kruskal.test(log(Creatinine) ~ cluster5, data = Clusterpheno)
+Creat10
+dunn.test(log(Clusterpheno$Creatinine), Clusterpheno$cluster5, method = "BH")
+```
+
+## TLco predicted
+
+Not normally distributed, unequal variance ==> log transformed
+
+```{r, warning = FALSE, message = FALSE}
+
+Clusterpheno %>% select(cluster5, tlco_predicted) %>% filter(!is.na(tlco_predicted)) %>% group_by(cluster5) %>% summarise(Shapiro.pvalue = shapiro.test(tlco_predicted)$p.value, Mean = mean(tlco_predicted), logmean = mean(log(tlco_predicted)), Variance = var(tlco_predicted), logvar = var(log(tlco_predicted)), min = min(tlco_predicted), max =  max(tlco_predicted), median = median(tlco_predicted), IQR = IQR(tlco_predicted)) %>% kable(.) %>% kable_styling(full_width = TRUE)
+
+Clusterpheno %>% select(cluster5, tlco_predicted) %>% filter(!is.na(tlco_predicted)) %>% ggplot(aes(x= cluster5, y =tlco_predicted)) + geom_boxplot(fill=clusterfills) + labs(x = "Cluster", y = "tlco_predicted") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"))
+
+tlco10<- kruskal.test(log(tlco_predicted) ~ cluster5, data = Clusterpheno)
+tlco10
+dunn.test(log(Clusterpheno$tlco_predicted), Clusterpheno$cluster5, method = "BH")
+```
+
+# Summary
+
+```{r}
+clinsums <- as.data.frame(rbind(c("sex", sex10$p.value, ""), c("FC", fc10$p.value, ""), c("Site", site10$p.value, ""), c("BMI", bmi10$p.value, ""), c("Age", age10$p.value, ""), c("NTproBNP", ntprobnp10$p.value, ""), c("Uric Acid", ua10$p.value, ""), c("FVCP", 0.174, ""), c("REVEAL risk group", NA, ""), c("Treatment", treatment10$p.value, ""), c("6MWD", smwd10$p.value, ""), c("mPAP", mpap10$p.value, ""), c("sPAP", spap10$p.value, ""), c("dPAP", dpap10$p.value, ""), c("mRAP", mRAP10$p.value, ""), c("SvO2", svo210$p.value, ""), c("PAWP", pawp10$p.value, ""), c("Platelet Count", pc10$p.value, ""), c("eGFR", egfr10$p.value, ""), c("Cardiac Output", CardiacOutput10$p.value, ""), c("Cardiac Index", CardiacIndex10$p.value, ""), c("Creatinine", Creat10$p.value, ""), c("PVR", pvr10$p.value, ""), c("TLCO predicted", tlco10$p.value, "")))
+clinsums <- clinsums %>% mutate(V2 = as.numeric(V2)) %>% mutate(V2 = signif(V2, 3)) %>% dplyr::rename(`Clinical Parameter` = V1, Pvalue = V2, `Significant post-hoc tests` = V3) %>% mutate(`Adjusted Pvalue` = signif(p.adjust(Pvalue, "BH"), 3)) %>% mutate(Significant = ifelse(`Adjusted Pvalue` <= 0.05, "*", "")) %>% select(`Clinical Parameter`, Pvalue, `Adjusted Pvalue`, Significant, `Significant post-hoc tests`) %>% arrange(`Adjusted Pvalue`)
+
+kable(clinsums) %>% kable_styling(full_width = TRUE)
+```
+
+```{r, eval = F}
+clinsums <- as.data.frame(rbind(c("sex", sex10$p.value, ""), c("FC", fc10$p.value, ""), c("Site", site10$p.value, "B,C,D,E"), c("BMI", bmi10$p.value, ""), c("Age", age10$p.value, ""), c("NTproBNP", ntprobnp10$p.value, ""), c("Uric Acid", ua10$p.value, ""), c("FVCP", 0.394, ""), c("REVEAL risk group", Reveal10$p.value, ""), c("Treatment", treatment10$p.value, "C & D"), c("6MWD", smwd10$p.value, ""), c("ISWT", iswt10$p.value, ""), c("BPDIA",bpdia10$p.value, "" ), c("BPSYS", bpsys10$p.value, ""), c("PVR", pvr10$p.value, ""), c("mPAP", mpap10$p.value, ""), c("sPAP", spap10$p.value, ""), c("dPAP", dpap10$p.value, ""), c("mRAP", mRAP10$p.value, ""), c("SvO2", svo210$p.value, ""), c("PAWP", pawp10$p.value, ""), c("Platelet Count", pc10$p.value, ""), c("eGFR", egfr10$p.value, ""), c("Cardiac Output", CardiacOutput10$p.value, ""), c("Cardiac Index", CardiacIndex10$p.value, ""), c("Creatinine", Creat10$p.value, "C/D"), c("TLCO predicted", tlco10$p.value, ""), c("Comorbidity: COPD", copd10$p.value, ""), c("Comorbidity: Sleep Apnea", SleepApnoea10$p.value, ""), c("Comorbidity: Atrial Fibrillation", AtrialFibrillation10$p.value, ""), c("Comorbidity: Diabetes", Diabetes10$p.value, ""), c("Comorbidity: Thyroid Disease", thyroid_disease10$p.value, ""), c("Comorbidity: CTD", CTD10$p.value, ""), c("Comorbidity: Scleroderma", scleroderma10$p.value, ""), c("Comorbidity: Ischaemic heart disease", ihd10$p.value, "" )))
+clinsums <- clinsums %>% dplyr::mutate(V2 = as.numeric(V2)) %>% dplyr::mutate(V2 = signif(V2, 3)) 
+
+clinsums <- clinsums %>% dplyr::rename(`Clinical Parameter` = V1, Pvalue = V2, `Significant post-hoc tests` = V3) %>% mutate(`Adjusted Pvalue` = signif(p.adjust(Pvalue, "BH"), 3)) %>% mutate(Significant = ifelse(`Adjusted Pvalue` <= 0.05, "*", "")) %>% select(`Clinical Parameter`, Pvalue, `Adjusted Pvalue`, Significant, `Significant post-hoc tests`) %>% arrange(`Adjusted Pvalue`)
+
+kable(clinsums) %>% kable_styling(full_width = TRUE)
+```
+
+# Survival 
+
+## Cluster survival
+
+```{r, message=FALSE, warning = FALSE}
+library(survival)
+library(survminer)
+library(readxl)
+SurviveData <- read_excel("../../Data/Survival.xlsx", sheet = "All")
+#SampleID - sampleID to match to cluster membership
+#DaysToEvent - number of days between sample (not necessarily diagnosis) and census date OR date of death. NB Imperial provided 'Days after diagnosis: sample date', 'days after diagnosis: Death', 'Status Alive/Dead', 'Days after diagnosis: Last follow up'. NOT time to census - some 'Days after diagnosis: Last follow up' are negative. Where this leads to a negative DaysToEvent, numbers set to 0.
+#Survivor: survival status of patient at census date (1 = dead, 0 = alive)
+
+ForSurvival <- left_join(Clusterpheno, SurviveData, by = "SampleID")
+
+# Use summary statistics to determine the cluster with the highest survival (5yr)
+highest_survival_cluster <- ForSurvival %>%
+  group_by(cluster5) %>%
+  summarize(median_survival = median(DaysToEvent5yr, na.rm = TRUE)) %>%
+  arrange(desc(median_survival)) %>%
+  slice(1) %>%
+  pull(cluster5)
+
+# Set the highest survival cluster as the reference level
+ForSurvival$cluster5 <- relevel(as.factor(ForSurvival$cluster5), ref = "C")
+
+# Fit Cox regression models
+Bases<- survival::Surv(time = ForSurvival$DaysToEvent, event = ForSurvival$Survivor)
+Bases1<- survival::Surv(time = ForSurvival$DaysToEvent1yr, event = ForSurvival$Survivor1yr)
+Bases3<- survival::Surv(time = ForSurvival$DaysToEvent3yr, event = ForSurvival$Survivor3yr)
+Bases5<- survival::Surv(time = ForSurvival$DaysToEvent5yr, event = ForSurvival$Survivor5yr)
+
+survminer::ggsurvplot(
+    fit = survival::survfit(Bases ~ 1, data = ForSurvival), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "", risk.table = TRUE, xscale = "d_y")
+
+summary(survival::survfit(Bases ~ 1, data = ForSurvival), times = 365.25)
+```
+
+Cluster E shows poor survival when adjusted for age and sex, both at 5 years, and with all time available.
+
+
+### All time available
+
+```{r}
+survminer::ggsurvplot(
+    fit = survival::survfit(Bases ~ cluster5, data = ForSurvival), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    palette=c("#88CCEE", "#CC6677", "#DDCC77", "#332288", "#AA4499" ),
+    risk.table = TRUE,  risk.table.height = 0.25, xscale = "d_y", break.time.by=365.25*2.5)
+
+
+broom::tidy(coxph(Bases~sex+age+cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ sex + age + 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases~sex+age+cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+broom::tidy(coxph(Bases~cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases~cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+#ggforest(coxph(Bases~sex+age+cluster5, data = ForSurvival))
+```
+
+### 5 year survival
+
+```{r}
+survminer::ggsurvplot(
+    fit = survival::survfit(Bases5 ~ cluster5, data = ForSurvival), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    palette=c("#88CCEE", "#CC6677", "#DDCC77", "#332288", "#AA4499"),
+    legend.labs = c("A", "B", "C", "D", "E"),
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5)
+
+
+# Create tidy output table with broom
+cox_model <- coxph(Bases5 ~ sex + age + cluster5, data = ForSurvival)
+broom::tidy(cox_model, exp = TRUE) %>%
+  kable(caption = "Cox regression: ~ sex + age + 5 clusters") %>%
+  kable_styling(full_width = TRUE)
+
+
+broom::tidy(coxph(Bases5~sex+age+cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ sex + age + 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases5~sex+age+cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+broom::tidy(coxph(Bases5~cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases5~cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+#ggforest(coxph(Bases5~sex+age+cluster5, data = ForSurvival))
+
+```
+
+

@@ -1,0 +1,401 @@
+---
+title: "Omada, PH 1-5, Zscore < 5"
+author: "Niamh Errington"
+date: "`r format(Sys.time(), '%d %B %Y')`" 
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+## Running OMADA
+
+```{r, message=FALSE, warning=FALSE}
+#load libraries
+library(tidyverse)
+library(janitor)
+library(omada)
+library(readr)
+library(qwraps2)               
+library(kableExtra)
+library(ggalluvial)
+library(clustree)
+
+
+#load previously cached chunks
+#qwraps2::lazyload_cache_dir(path = "Omada/FinalModels/OmadaPH12345_Z5_cache/html")
+source("../custom_optimalClustering.R")
+
+#load Zscored data
+zscored <- read_csv("../../Data/z_TI_noout_5_PH12345.csv") 
+
+#Remove all cols other than numeric miRNAs
+miRdata <- zscored %>% select(starts_with("hsa")) %>% as.matrix(.)
+rownames(miRdata) <- zscored$SampleID
+
+#Check for NA
+any(is.na(miRdata))
+
+#Check numeric
+is.numeric(miRdata)
+
+all(is.numeric(miRdata))
+```
+
+
+```{r}
+# Selecting the upper k limit and number of comparisons
+method.results <- clusteringMethodSelection(miRdata, method.upper.k = 20, 
+                                            number.of.comparisons = 2)
+
+# Extract results
+pa.scores <- get_partition_agreement_scores(method.results)
+
+# Plot results
+plot_partition_agreement(method.results)
+```
+
+```{r}
+# Selecting minimum and maximum number of clusters and feature step
+feature.selection.results <-  featureSelection(miRdata, min.k = 2, max.k = 20,
+                                               step = 25)
+#Warning: NAs introduced by coercion
+
+# Extract results
+feature.selection.scores <- get_average_feature_k_stabilities(feature.selection.results)
+optimal.number.of.features <- get_optimal_number_of_features
+optimal.features <- get_optimal_features(feature.selection.results)
+
+# Plot results
+plot_average_stabilities(feature.selection.results)
+```
+
+Using optimal miRs
+
+```{r}
+miRdata.optimal <- miRdata[, colnames(miRdata) %in% optimal.features]
+cluster.voting.results <- clusterVoting(miRdata.optimal, 2,25,"sc")
+
+# Extract results
+internal.metric.scores_optimal <- get_internal_metric_scores(cluster.voting.results)
+cluster.memberships.k_optimal <- get_cluster_memberships_k(cluster.voting.results)
+metric.votes.k_optimal <- get_metric_votes_k(cluster.voting.results)
+vote.frequencies.k_optimal <- get_vote_frequencies_k(cluster.voting.results)
+
+# Plot results
+plot_vote_frequencies(cluster.voting.results)
+
+```
+
+Using all miRs
+
+```{r}
+cluster.voting.results_allmiR <- clusterVoting(miRdata, 2,25,"sc")
+
+# Extract results
+internal.metric.scores <- get_internal_metric_scores(cluster.voting.results_allmiR)
+cluster.memberships.k <- get_cluster_memberships_k(cluster.voting.results_allmiR)
+metric.votes.k <- get_metric_votes_k(cluster.voting.results_allmiR)
+vote.frequencies.k <- get_vote_frequencies_k(cluster.voting.results_allmiR)
+
+# Plot results
+plot_vote_frequencies(cluster.voting.results_allmiR)
+```
+
+max k = 9
+
+```{r}
+# Selecting minimum and maximum number of clusters and feature step, max k = 9
+feature.selection.results_max9 <-  featureSelection(miRdata, min.k = 2, max.k = 9,
+                                               step = 25)
+# Extract results
+feature.selection.scores_max9 <- get_average_feature_k_stabilities(feature.selection.results_max9)
+optimal.number.of.features <- get_optimal_number_of_features
+optimal.features_max9 <- get_optimal_features(feature.selection.results_max9)
+
+# Plot results
+plot_average_stabilities(feature.selection.results_max9)
+
+miRdata.optimal_max9 <- miRdata[, colnames(miRdata) %in% optimal.features_max9]
+cluster.voting.results_max9 <- clusterVoting(miRdata.optimal_max9, 2,9,"sc")
+
+```
+
+
+```{r}
+# Perform PCA
+pca_result <- prcomp(miRdata, scale. = TRUE)
+
+# Extract PC scores
+pc_scores <- as.data.frame(pca_result$x) %>% rownames_to_column(var = "SampleID") 
+
+```
+
+
+```{r}
+library(Rtsne)
+# Perform t-SNE
+tsne_result <- Rtsne(miRdata)
+
+# Extract the two-dimensional embedding
+tsne_embedding <- tsne_result$Y
+tsne <- cbind(tsne_embedding, zscored) 
+```
+
+# Heatmaps
+
+```{r}
+library(pheatmap)
+library(kernlab)
+
+# Function to perform spectral clustering and plot heatmap
+generate_spectral_heatmap <- function(data, row_clusters, col_clusters, title_suffix = "") {
+  # Perform spectral clustering on rows
+  spectral_rows <- specc(as.matrix(data), centers = row_clusters)
+  row_clusters_order <- as.integer(spectral_rows)
+
+  # Perform spectral clustering on columns (transpose the data for clustering columns)
+  spectral_cols <- specc(t(as.matrix(data)), centers = col_clusters)
+  col_clusters_order <- as.integer(spectral_cols)
+
+  # Reorder the data based on the cluster assignments
+  data_ordered <- data[order(row_clusters_order), order(col_clusters_order)]
+
+  # Define the color palette
+  my_palette <- colorRampPalette(c("blue", "white", "red"))(100)
+
+  # Plot heatmap with reordered data
+  pheatmap(data_ordered, color = my_palette,
+           cluster_rows = FALSE, cluster_cols = FALSE, # Spectral clustering already done
+           main = paste("miRNA Expression Heatmap -", row_clusters, "Row Clusters,",
+                        col_clusters, "Column Clusters", title_suffix))
+}
+
+# Example: Generate heatmaps with different number of clusters
+cluster_combinations <- list(
+  c(3, 3),
+  c(4, 4),
+  c(5,5),
+  c(6,6),
+  c(7,7),
+  c(8,8),
+  c(9,9),
+  c(10,10),
+  c(11,11),
+  c(12,12),
+  c(13,13),
+  c(14,14),
+  c(15,15)
+)
+
+# Loop through each cluster combination and generate heatmaps
+for (clusters in cluster_combinations) {
+  row_k <- clusters[1]
+  col_k <- clusters[2]
+  generate_spectral_heatmap(miRdata, row_k, col_k)
+}
+
+generate_spectral_heatmap(miRdata, 5,5)
+
+```
+
+Check miRNA and cluster memberships for PH123
+
+
+```{r}
+#allmiR_k2 <- optimalClustering(miRdata.optimal, 2, "spectral")
+
+# Define the function to perform spectral clustering and save memberships
+opClusMembers <- function(data) {
+  # Initialize an empty list to store the memberships
+  memberships_list <- list()
+  
+  # Loop through the desired number of clusters
+  for (k in 2:25) {
+    # Perform spectral clustering
+    OC <- optimalClustering(data, k, "spectral")
+    
+    # Extract cluster memberships
+    memberships <- get_optimal_memberships(OC)
+    
+    # Store the memberships in the list with the cluster number as the key
+    memberships_list[[paste0("k", k)]] <- memberships
+  }
+  
+  # Convert the list to a dataframe
+  memberships_df <- as.data.frame(memberships_list)
+  
+  return(memberships_df)
+}
+
+clustermemberships <- opClusMembers(miRdata)
+
+clustermemberships_a <- clustermemberships %>% dplyr::rename(SampleID = k2.id) %>% 
+  select(-matches("id", ignore.case = FALSE))
+```
+
+```{r}
+#write_csv(clustermemberships_a, "Omada/FinalModels/PH12345_25memberships_Z5_allmiR.csv")
+```
+
+# Clustertrees
+
+```{r}
+cluster_memberships <- clustermemberships_a
+
+colnames(cluster_memberships) <-  sub("\\.memberships", "", colnames(cluster_memberships))
+
+members_long <- cluster_memberships %>% pivot_longer(cols = !c("SampleID"), values_to = "cluster") 
+  
+members_long$name <- factor(members_long$name, levels = c("k2", "k3", "k4", "k5", "k6", "k7", "k8", "k9", "k10", "k11", "k12", "k13", "k14", "k15", "k16", "17", "k18", "k19", "k20", "k21", "k22", "k23", "k24", "k25"))
+
+members_long$cluster <- factor(members_long$cluster)
+
+
+ggplot(members_long,
+       aes(x = name, stratum = cluster, alluvium = SampleID,
+           fill = cluster, label = cluster)) +
+  geom_flow(stat = "alluvium", lode.guidance = "frontback") +
+  geom_stratum() +
+  theme(legend.position = "bottom") + labs(x = "Max cluster available", y = "n" ,title = "Cluster memberships") + theme_minimal()
+
+members_long %>% filter(name %in% c("k2", "k3", "k4", "k5","k6", "k7", "k8", "k9", "k10")) %>% ggplot( aes(x = name, stratum = cluster, alluvium = SampleID,
+           fill = cluster, label = cluster)) +
+  geom_flow(stat = "alluvium", lode.guidance = "frontback") +
+  geom_stratum() +
+  theme(legend.position = "bottom") + labs(x = "Max cluster available", y = "n" ,title = "Cluster memberships, k2-10") + theme_minimal()
+
+clustree(cluster_memberships, prefix = "k")
+
+cluster_memberships %>% select("k2", "k3", "k4", "k5", "k6", "k7", "k8", "k9", "k10") %>% clustree(., prefix = "k")
+
+cluster_memberships %>% select("k10", "k11","k12", "k13", "k14", "k15", "k16", "k17", "k18", "k19", "k20") %>% clustree(., prefix = "k")
+
+cluster_memberships %>% select("k19", "k20", "k21", "k22", "k23", "k24", "k25") %>% clustree(., prefix = "k")
+
+```
+
+```{r}
+cluster.voting.results_allmiR_m6 <- clusterVoting(miRdata, 2,6,"sc")
+cluster.voting.results_allmiR_m9 <- clusterVoting(miRdata, 2,9,"sc")
+cluster.voting.results_allmiR_m10 <- clusterVoting(miRdata, 2,10,"sc")
+
+plot_vote_frequencies(cluster.voting.results_allmiR_m6) + ggtitle("max k = 6")
+plot_vote_frequencies(cluster.voting.results_allmiR_m9) + ggtitle("max k = 9")
+plot_vote_frequencies(cluster.voting.results_allmiR_m10) + ggtitle("max k = 10")
+
+```
+
+# TSNE
+
+```{r}
+# Extract the two-dimensional embedding
+tsne_embedding <- tsne_result$Y
+tsne <- cbind(tsne_embedding, zscored) 
+
+tsne <- left_join(tsne, clustermemberships_a, by = "SampleID")
+
+tsne %>% ggplot(aes(x = `1`, y = `2`, color = as.factor(sex))) + geom_point()  +
+  ggtitle("t-SNE Plot, sex") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL))  + scale_color_manual(values = c("lightpink", "deeppink"))
+
+tsne %>% ggplot(aes(x = `1`, y = `2`, color = as.factor(site))) + geom_point()  +
+  ggtitle("t-SNE Plot, site") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL))  + scale_color_manual(values = c("lightpink", "deeppink", "midnightblue"))
+
+tsne %>% ggplot(aes(x = `1`, y = `2`, color = as.factor(dana1))) + geom_point()  +
+  ggtitle("t-SNE Plot, DANA") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL))  + scale_color_manual(values = c("lightpink", "deeppink", "midnightblue"))
+
+tsne %>% ggplot(aes(x = `1`, y = `2`, color = as.factor(k5.memberships))) + geom_point()  +   ggtitle("t-SNE Plot, k=5") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL)) 
+
+tsne %>% ggplot(aes(x = `1`, y = `2`, color = as.factor(k6.memberships))) + geom_point()  +   ggtitle("t-SNE Plot, k=6") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL)) 
+
+```
+
+# PCA
+
+```{r}
+# Plot PCA
+ggplot(pc_scores, aes(x = PC1, y = PC2)) +
+  geom_point() +  xlab("PC1") +   ylab("PC2") 
+
+pc_scores <- pc_scores %>% left_join(., zscored, by = "SampleID") %>% left_join(., clustermemberships_a, by = "SampleID")
+
+ggplot(pc_scores, aes(x = PC1, y = PC2, color = as.factor(dana1))) +
+  geom_point() +  xlab("PC1") +   ylab("PC2") +
+  ggtitle("PCA Plot, DANA") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL)) + scale_color_manual(values = c("lightpink", "deeppink", "midnightblue"))
+
+ggplot(pc_scores, aes(x = PC1, y = PC2, color = as.factor(site))) +
+  geom_point() +  xlab("PC1") +   ylab("PC2") +
+  ggtitle("PCA Plot, site") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL))  + scale_color_manual(values = c("lightpink", "deeppink", "midnightblue"))
+
+ggplot(pc_scores, aes(x = PC1, y = PC2, color = as.factor(sex))) +
+  geom_point() +  xlab("PC1") +   ylab("PC2") +
+  ggtitle("PCA Plot, sex") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL))  + scale_color_manual(values = c("lightpink", "deeppink"))
+
+ggplot(pc_scores, aes(x = PC1, y = PC2, color = as.factor(k5.memberships))) +
+  geom_point() +  xlab("PC1") +   ylab("PC2") +
+  ggtitle("PCA Plot, k = 5") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL))  
+
+ggplot(pc_scores, aes(x = PC3, y = PC4, color = as.factor(k5.memberships))) +
+  geom_point() +  xlab("PC3") +   ylab("PC4") +
+  ggtitle("PCA Plot, k = 5") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL))  
+
+ggplot(pc_scores, aes(x = PC1, y = PC2, color = as.factor(k6.memberships))) +
+  geom_point() +  xlab("PC1") +   ylab("PC2") +
+  ggtitle("PCA Plot, k = 5") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL)) 
+
+ggplot(pc_scores, aes(x = PC3, y = PC4, color = as.factor(k6.memberships))) +
+  geom_point() +  xlab("PC3") +   ylab("PC4") +
+  ggtitle("PCA Plot, k = 6") + theme(panel.background = element_blank(), panel.grid.major = element_line(colour = "grey"), axis.line = element_line(colour = "grey"), strip.text = element_text(size = 16)) +  guides(color=guide_legend(title=NULL))  
+
+```
+
+```{r}
+miRdata_clustered <- miRdata %>% as.data.frame(.) %>%
+  tibble::rownames_to_column(var = "SampleID") %>% left_join(., select(clustermemberships_a, SampleID, k5.memberships), by = "SampleID") %>%
+  mutate(Cluster = k5.memberships) %>%  select(-k5.memberships) %>%
+  arrange(Cluster)  # Sort samples by cluster
+
+
+#Select only miRNA expression values (excluding SampleID and Cluster)
+miRdata_matrix <- miRdata_clustered %>%
+  select(-SampleID, -Cluster) %>%
+  as.matrix()  # Convert to matrix format
+rownames(miRdata_matrix) <- miRdata_clustered$SampleID
+
+#Create annotation for clusters
+annotation_df <- data.frame(Cluster = factor(miRdata_clustered$Cluster))  # Convert to factor
+rownames(annotation_df) <- miRdata_clustered$SampleID  # Ensure rownames match
+
+# Define custom colors for clusters
+clusterfills <- c(`1` = "#88CCEE",  # Red
+                    `2` = "#CC6677",  # Blue
+                    `3` = "#DDCC77",  # Green
+                    `4` =  "#332288",  # Purple
+                    `5` = "#AA4499")  # Orange
+
+# Ensure Cluster column is a factor
+annotation_df$Cluster <- factor(annotation_df$Cluster)
+
+# Define annotation colors
+annotation_colors <- list(Cluster = clusterfills)
+
+# Generate heatmap with new cluster colors
+pheatmap(
+  miRdata_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  cluster_rows = FALSE,  # Use predefined clusters
+  cluster_cols = TRUE,  # Cluster features (miRNAs)
+  show_rownames = FALSE,
+  show_colnames = FALSE,
+  annotation_row = annotation_df,  # Add cluster colors
+  annotation_colors = annotation_colors,  # Custom cluster colors
+  main = "miRNA Expression Heatmap (k = 5 Clusters)"
+)
+
+```

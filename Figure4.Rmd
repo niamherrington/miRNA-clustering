@@ -1,0 +1,187 @@
+---
+title: "Figure 4"
+author: "Niamh Errington"
+date: "`r format(Sys.time(), '%d %B %Y')`" 
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Survival 
+
+## Cluster survival
+
+```{r, message=FALSE, warning = FALSE}
+library(survival)
+library(survminer)
+library(readxl)
+library(tidyverse)
+library(readr)
+library(ggplot2)
+
+memberships <- read_csv("Data/PH12345_25memberships_Z5_allmiR.csv")
+
+# load phenotype data, filter to only PH patients. Join to clustermemberships, and recode as factors. Add reveal score group from score.
+pheno <- read_csv("Data/Updatedpheno060223.csv") %>% filter(dana1 %in% c("PH1", "PH2", "PH3", "PH4", "PH5")) %>% left_join(., memberships, by = "SampleID")  %>% mutate(cluster5= as.factor(recode(k5.memberships, `1`="A", `2`="B",`3`="C", `4`="D", `5`="E"))) %>% mutate(REVEALgroup = case_when(REVEALscore <7 ~ "Low", REVEALscore > 6 & REVEALscore <9 ~ "Intermediate", REVEALscore >8 ~ "High")) 
+
+# Create column with PH1-5 recoded to WHPH names
+pheno$danalong <- recode_factor(pheno$dana1, "PH1" = "PAH", "PH2" = "PH-LHD", "PH3" = "PH-lung", "PH4" = "PH-Obs", "PH5" = "PH-Misc")
+
+# Remove any patients without a cluster allocation
+Clusterpheno <- pheno %>% filter(!is.na(cluster5))
+
+# Set colours for clusters
+clusterfills <- c("#88CCEE", "#CC6677", "#DDCC77", "#332288", "#AA4499")
+SurviveData <- read_excel("../../Data/Survival.xlsx", sheet = "All")
+#SampleID - sampleID to match to cluster membership
+#DaysToEvent - number of days between sample (not necessarily diagnosis) and census date OR date of death. NB Imperial provided 'Days after diagnosis: sample date', 'days after diagnosis: Death', 'Status Alive/Dead', 'Days after diagnosis: Last follow up'. NOT time to census - some 'Days after diagnosis: Last follow up' are negative. Where this leads to a negative DaysToEvent, numbers set to 0.
+#Survivor: survival status of patient at census date (1 = dead, 0 = alive)
+
+ForSurvival <- left_join(Clusterpheno, SurviveData, by = "SampleID")
+
+# Use summary statistics to determine the cluster with the highest survival (5yr)
+highest_survival_cluster <- ForSurvival %>%
+  group_by(cluster5) %>%
+  summarize(median_survival = median(DaysToEvent5yr, na.rm = TRUE)) %>%
+  arrange(desc(median_survival)) %>%
+  slice(1) %>%
+  pull(cluster5)
+
+# Set the highest survival cluster as the reference level
+ForSurvival$cluster5 <- relevel(as.factor(ForSurvival$cluster5), ref = "C")
+
+Bases<- survival::Surv(time = ForSurvival$DaysToEvent, event = ForSurvival$Survivor)
+Bases1<- survival::Surv(time = ForSurvival$DaysToEvent1yr, event = ForSurvival$Survivor1yr)
+Bases3<- survival::Surv(time = ForSurvival$DaysToEvent3yr, event = ForSurvival$Survivor3yr)
+Bases5<- survival::Surv(time = ForSurvival$DaysToEvent5yr, event = ForSurvival$Survivor5yr)
+
+survminer::ggsurvplot(
+    fit = survival::survfit(Bases ~ 1, data = ForSurvival), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "", risk.table = TRUE, xscale = "d_y")
+
+summary(survival::survfit(Bases ~ 1, data = ForSurvival), times = 365.25)
+```
+
+Cluster E shows poor survival when adjusted for age and sex, both at 5 years, and with all time available.
+
+
+### All time available
+
+```{r}
+survminer::ggsurvplot(
+    fit = survival::survfit(Bases ~ cluster5, data = ForSurvival), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    palette=c("#88CCEE", "#CC6677", "#DDCC77", "#332288", "#AA4499" ),
+    risk.table = TRUE,  risk.table.height = 0.25, xscale = "d_y", break.time.by=365.25*2.5)
+
+
+broom::tidy(coxph(Bases~sex+age+cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ sex + age + 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases~sex+age+cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+broom::tidy(coxph(Bases~cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases~cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+#ggforest(coxph(Bases~sex+age+cluster5, data = ForSurvival))
+```
+
+### 5 year survival
+
+```{r}
+survminer::ggsurvplot(
+    fit = survival::survfit(Bases5 ~ cluster5, data = ForSurvival), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    palette=c("#88CCEE", "#CC6677", "#DDCC77", "#332288", "#AA4499"),
+    legend.labs = c("A", "B", "C", "D", "E"),
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5)
+
+
+broom::tidy(coxph(Bases5~sex+age+cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ sex + age + 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases5~sex+age+cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+broom::tidy(coxph(Bases5~cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases5~cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+#ggforest(coxph(Bases5~sex+age+cluster5, data = ForSurvival))
+
+ForSurvival$clusterACOther <- ifelse(ForSurvival$cluster5 %in% c("A", "B", "D"), "Other", ForSurvival$cluster5)
+
+survminer::ggsurvplot(
+    fit = survival::survfit(Bases5 ~ clusterACOther, data = ForSurvival), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    legend.labs = c("Cluster C", "Cluster E", "Clusters A, B, D"),
+    palette=c("#DDCC77","#AA4499", "darkgreen"),
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5)
+```
+
+# Survival by DANA group
+
+```{r}
+survminer::ggsurvplot(
+    fit = survival::survfit(Bases5 ~ dana1, data =ForSurvival), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5) 
+
+BasesA<- survival::Surv(time = ForSurvival$DaysToEvent5yr[ForSurvival$cluster5 == "A"], event = ForSurvival$Survivor[ForSurvival$cluster5 == "A"])
+BasesB<- survival::Surv(time = ForSurvival$DaysToEvent5yr[ForSurvival$cluster5 == "B"], event = ForSurvival$Survivor[ForSurvival$cluster5 == "B"])
+BasesC<- survival::Surv(time = ForSurvival$DaysToEvent5yr[ForSurvival$cluster5 == "C"], event = ForSurvival$Survivor[ForSurvival$cluster5 == "C"])
+BasesD<- survival::Surv(time = ForSurvival$DaysToEvent5yr[ForSurvival$cluster5 == "D"], event = ForSurvival$Survivor[ForSurvival$cluster5 == "D"])
+BasesE<- survival::Surv(time = ForSurvival$DaysToEvent5yr[ForSurvival$cluster5 == "E"], event = ForSurvival$Survivor[ForSurvival$cluster5 == "E"])
+
+survminer::ggsurvplot(
+    fit = survival::survfit(BasesA ~ dana1, data =ForSurvival[ForSurvival$cluster5 == "A",]), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    title = "Cluster A",
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5) 
+
+survminer::ggsurvplot(
+    fit = survival::survfit(BasesB ~ dana1, data =ForSurvival[ForSurvival$cluster5 == "B",]), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    title = "Cluster B",
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5) 
+
+survminer::ggsurvplot(
+    fit = survival::survfit(BasesC ~ dana1, data =ForSurvival[ForSurvival$cluster5 == "C",]), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    title = "Cluster C",
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5) 
+
+survminer::ggsurvplot(
+    fit = survival::survfit(BasesD ~ dana1, data =ForSurvival[ForSurvival$cluster5 == "D",]), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    title = "Cluster D",
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5) 
+
+survminer::ggsurvplot(
+    fit = survival::survfit(BasesE ~ dana1, data =ForSurvival[ForSurvival$cluster5 == "E",]), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    title = "Cluster E",
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5) 
+
+```
