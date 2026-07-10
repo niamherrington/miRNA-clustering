@@ -587,6 +587,27 @@ survminer::ggsurvplot(
     risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5)
 ```
 
+### 1 year survival
+
+```{r}
+survminer::ggsurvplot(
+    fit = survival::survfit(Bases1 ~ cluster5, data = ForSurvival), 
+    xlab = "Years", 
+    ylab = "Overall survival probability",
+    legend.title = "",
+    palette=c("#88CCEE", "#CC6677", "#DDCC77", "#332288", "#AA4499"),
+    legend.labs = c("A", "B", "C", "D", "E"),
+    risk.table = TRUE,  risk.table.height = 0.3, xscale = "d_y", break.time.by=365.25*2.5)
+
+
+broom::tidy(coxph(Bases1~sex+age+cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ sex + age + 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases5~sex+age+cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+broom::tidy(coxph(Bases1~cluster5, data = ForSurvival), exp = TRUE) %>% kable(., caption = "Cox regression: ~ 5 clusters") %>% kable_styling(full_width = TRUE)
+coxph(Bases5~cluster5, data = ForSurvival) %>% gtsummary::tbl_regression(exp = TRUE)
+
+```
+
 # Survival by DANA group
 
 ```{r}
